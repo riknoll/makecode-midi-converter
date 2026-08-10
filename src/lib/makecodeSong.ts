@@ -1,11 +1,20 @@
-import { Midi } from '@tonejs/midi'
+import * as MidiModule from '@tonejs/midi'
+import type { Midi as MidiType } from '@tonejs/midi'
 
 import { type Song, type Instrument, type NoteEvent, getEmptySong, encodeSongToHex, type Track } from "./pxt"
+
+// Bundlers resolve @tonejs/midi to its ESM build (named exports), while node resolves
+// the UMD build, where everything hangs off the CommonJS default export.
+const MidiCtor: typeof MidiType =
+    (MidiModule as unknown as { Midi?: typeof MidiType }).Midi ??
+    (MidiModule as unknown as { default: { Midi: typeof MidiType } }).default.Midi
 
 
 export type MidiTrackSummary = {
     id: number
     name: string
+    /** The track name from the MIDI file, before any merge-time renaming */
+    sourceTrackName: string
     sourceFileName: string
     sourcePpq: number
     noteCount: number
@@ -51,9 +60,28 @@ export const MAKECODE_MELODIC_INSTRUMENT_PRESETS = MAKECODE_INSTRUMENT_PRESETS.f
     return !track?.drums
 })
 
+export type SongLogger = {
+    log: (message: string) => void
+    warn: (message: string) => void
+}
+
+let logger: SongLogger = {
+    log: (message) => console.log(message),
+    warn: (message) => console.warn(message),
+}
+
+// Allows non-browser hosts (e.g. the CLI) to silence or redirect diagnostics
+export const setSongLogger = (next: SongLogger) => {
+    logger = next
+}
+
 export const parseMidi = async (file: File): Promise<ParsedMidiSummary> => {
     const arrayBuffer = await file.arrayBuffer()
-    const midi = new Midi(arrayBuffer)
+    return parseMidiData(arrayBuffer, file.name)
+}
+
+export const parseMidiData = (data: ArrayBuffer | Uint8Array, fileName: string): ParsedMidiSummary => {
+    const midi = new MidiCtor(data instanceof Uint8Array ? data : new Uint8Array(data))
 
     const beatsPerMinute = Math.max(1, Math.round(midi.header.tempos[0]?.bpm || 120))
     const beatsPerMeasure = Math.min(Math.max(midi.header.timeSignatures[0]?.timeSignature?.[0] || 4, 1), 12)
@@ -64,11 +92,13 @@ export const parseMidi = async (file: File): Promise<ParsedMidiSummary> => {
 
         const midiNotes = track.notes.map((note) => note.midi)
         const channel: number | null = typeof track.channel === 'number' ? track.channel : null
+        const trackName = track.name?.trim() || `Track ${index + 1}`
 
         result.push({
             id: index,
-            name: track.name?.trim() || `Track ${index + 1}`,
-            sourceFileName: file.name,
+            name: trackName,
+            sourceTrackName: trackName,
+            sourceFileName: fileName,
             sourcePpq: ppq,
             noteCount: track.notes.length,
             channel,
@@ -85,7 +115,7 @@ export const parseMidi = async (file: File): Promise<ParsedMidiSummary> => {
     }
 
     return {
-        fileNames: [file.name],
+        fileNames: [fileName],
         beatsPerMinute,
         beatsPerMeasure,
         tracks,
@@ -97,7 +127,14 @@ export const parseMidiFiles = async (files: File[]): Promise<ParsedMidiSummary> 
         throw new Error('Select at least one MIDI file.')
     }
 
-    const parsedFiles = await Promise.all(files.map((file) => parseMidi(file)))
+    return mergeParsedMidi(await Promise.all(files.map((file) => parseMidi(file))))
+}
+
+export const mergeParsedMidi = (parsedFiles: ParsedMidiSummary[]): ParsedMidiSummary => {
+    if (!parsedFiles.length) {
+        throw new Error('Select at least one MIDI file.')
+    }
+
     const first = parsedFiles[0]
     let nextTrackId = 0
 
@@ -124,7 +161,7 @@ export const parseMidiFiles = async (files: File[]): Promise<ParsedMidiSummary> 
     }
 }
 
-export const extractNoteEvents = (midi: Midi, trackIndex: number, isDrumTrack: boolean) => {
+export const extractNoteEvents = (midi: MidiType, trackIndex: number, isDrumTrack: boolean) => {
     const makecodeEvents: NoteEvent[] = [];
     const track = midi.tracks[trackIndex];
     if (!track) {
@@ -165,7 +202,7 @@ export const extractNoteEvents = (midi: Midi, trackIndex: number, isDrumTrack: b
         }
     }
 
-    console.log(`Generated ${makecodeEvents.length} makecode events for track`);
+    logger.log(`Generated ${makecodeEvents.length} makecode events for track`);
     for (const event of makecodeEvents) {
         if (makecodeEvents.some(e => {
             if (e === event) return false;
@@ -176,7 +213,7 @@ export const extractNoteEvents = (midi: Midi, trackIndex: number, isDrumTrack: b
 
             return false;
         })) {
-            console.warn(`Event with notes ${event.notes.map(n => n.note).join(', ')} from tick ${event.startTick} to ${event.endTick} overlaps with another event`);
+            logger.warn(`Event with notes ${event.notes.map(n => n.note).join(', ')} from tick ${event.startTick} to ${event.endTick} overlaps with another event`);
         }
     }
 
@@ -220,11 +257,11 @@ const scaleTiming = (events: NoteEvent[], sourcePPQ: number, targetPPQ: number):
     });
 }
 
-export const buildMakeCodeSongSnippet = (
+export const buildMakeCodeSong = (
     parsed: ParsedMidiSummary,
     instrumentAssignments: Record<number, string>,
     options: BuildSongOptions = {},
-): string => {
+): Song => {
     const ticksPerBeat = 16
     const transposeOctaves = options.transposeOctaves || 0
     const drumTransposeOctaves = options.drumTransposeOctaves || 0
@@ -292,7 +329,25 @@ export const buildMakeCodeSongSnippet = (
         tracks,
     }
 
-    const songHex = encodeSongToHex(song)
+    return song
+}
+
+export const buildMakeCodeSongHex = (
+    parsed: ParsedMidiSummary,
+    instrumentAssignments: Record<number, string>,
+    options: BuildSongOptions = {},
+): string => encodeSongToHex(buildMakeCodeSong(parsed, instrumentAssignments, options))
+
+export const buildMakeCodeSongSnippet = (
+    parsed: ParsedMidiSummary,
+    instrumentAssignments: Record<number, string>,
+    options: BuildSongOptions = {},
+): string => {
+    const songHex = buildMakeCodeSongHex(parsed, instrumentAssignments, options)
+
+    const transposeOctaves = options.transposeOctaves || 0
+    const drumTransposeOctaves = options.drumTransposeOctaves || 0
+    const beatsPerMinute = Math.max(1, Math.round(options.beatsPerMinute ?? parsed.beatsPerMinute))
 
     const fileLabel =
         parsed.fileNames.length === 1 ? parsed.fileNames[0] : `${parsed.fileNames.length} MIDI files`
@@ -320,4 +375,10 @@ export const guessInstrumentPreset = (trackName: string, index: number) => {
         }
     }
     return MAKECODE_MELODIC_INSTRUMENT_PRESETS[index % MAKECODE_MELODIC_INSTRUMENT_PRESETS.length].id
+}
+
+// MIDI channel 10 (zero-indexed 9) is reserved for percussion by the General MIDI spec
+export const isLikelyDrumTrack = (track: MidiTrackSummary) => {
+    const lowerName = `${track.name} ${track.sourceTrackName}`.toLowerCase()
+    return track.channel === 9 || lowerName.includes('drum') || lowerName.includes('percussion')
 }

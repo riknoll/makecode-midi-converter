@@ -3,6 +3,7 @@ import './App.css'
 import {
   buildMakeCodeSongSnippet,
   guessInstrumentPreset,
+  isLikelyDrumTrack,
   parseMidiFiles,
   type ParsedMidiSummary,
 } from './lib/makecodeSong'
@@ -49,7 +50,7 @@ function App() {
       const defaults: Record<number, string> = {}
       parsed.tracks.forEach((track, index) => {
         defaults[track.id] = guessInstrumentPreset(track.name, index)
-        if (track.name.toLowerCase().includes('drum') || track.name.toLowerCase().includes('percussion')) {
+        if (isLikelyDrumTrack(track)) {
           initialDrumIds.add(track.id)
         }
       })
