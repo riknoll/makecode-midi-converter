@@ -4,8 +4,11 @@ import { parseArgs } from 'node:util'
 
 import {
     buildMakeCodeSongHex,
+    checkNameForPreset,
+    DEFAULT_TICKS_PER_BEAT,
     guessInstrumentPreset,
     isLikelyDrumTrack,
+    MAX_TICKS_PER_BEAT,
     mergeParsedMidi,
     parseMidiData,
     setSongLogger,
@@ -18,11 +21,15 @@ const SONG_MIME_TYPE = 'application/mkcd-song'
 const IMAGE_MIME_TYPE = 'image/x-mkcd-f4'
 const IMAGES_NAMESPACE = 'myImages'
 const SONG_NAMESPACE = 'mySongs'
+const LIBRARY_NAMESPACE = 'sprites.songs'
+const FORMATS = ['project', 'library'] as const
+
+type Format = (typeof FORMATS)[number]
 
 type SongEntry = {
     id: string
     displayName: string
-    /** The song bytes as hex; the jres stores these base64 encoded */
+    /** The song bytes as hex. Project jres files store this as-is; library jres files base64 it. */
     hex: string
 }
 
@@ -41,19 +48,30 @@ the format "songname_BPM" (for example "boss_battle_140"). The BPM suffix is
 used as the tempo of the generated song; if it is missing, the tempo stored in
 the MIDI file is used instead.
 
+Formats:
+  project   For a MakeCode project. The jres stores the song data as hex and
+            the companion TypeScript registers the songs with
+            helpers._registerFactory. Defaults to images.g.jres/images.g.ts.
+  library   For a MakeCode extension. The jres stores the song data as base64
+            and the companion TypeScript declares each song as an exported
+            fixedInstance constant. Defaults to music.jres/music.ts.
+
 Options:
-  -o, --out <path>          Output .jres path (default: ./images.g.jres)
-      --ts <path>           Output .g.ts path (default: alongside the .jres)
-      --no-ts               Skip emitting the companion .g.ts file
+  -f, --format <name>       Output format: ${FORMATS.join(' | ')} (default: project)
+  -o, --out <path>          Output .jres path (default: depends on the format)
+      --ts <path>           Output .ts path (default: alongside the .jres)
+      --no-ts               Skip emitting the companion .ts file
       --transpose <n>       Octaves to transpose melodic tracks (default: -3)
       --drum-transpose <n>  Octaves to transpose drum tracks (default: -2)
       --bpm <n>             Force this tempo for every song
-      --namespace <name>    Namespace for the generated songs (default: ${SONG_NAMESPACE})
+      --ticks-per-beat <n>  Output timing resolution (default: ${DEFAULT_TICKS_PER_BEAT})
+      --namespace <name>    Namespace for the generated songs
+                            (default: ${SONG_NAMESPACE} for project, sprites.songs for library)
   -q, --quiet               Only print errors
   -h, --help                Show this message
 `
 
-const NUMERIC_FLAGS = ['transpose', 'drum-transpose', 'bpm']
+const NUMERIC_FLAGS = ['transpose', 'drum-transpose', 'bpm', 'ticks-per-beat']
 
 /**
  * parseArgs refuses to treat a leading-dash token as an option argument, so
@@ -83,12 +101,14 @@ const parseOptions = () => {
         args: normalizeNegativeNumbers(process.argv.slice(2)),
         allowPositionals: true,
         options: {
+            format: { type: 'string', short: 'f' },
             out: { type: 'string', short: 'o' },
             ts: { type: 'string' },
             'no-ts': { type: 'boolean', default: false },
             transpose: { type: 'string' },
             'drum-transpose': { type: 'string' },
             bpm: { type: 'string' },
+            'ticks-per-beat': { type: 'string' },
             namespace: { type: 'string' },
             quiet: { type: 'boolean', short: 'q', default: false },
             help: { type: 'boolean', short: 'h', default: false },
@@ -104,16 +124,24 @@ const parseOptions = () => {
         throw new Error(`Expected a single input directory but received ${positionals.length}.`)
     }
 
-    const jresPath = resolve(values.out || 'images.g.jres')
+    const format = (values.format || 'project') as Format
+    if (!FORMATS.includes(format)) {
+        throw new Error(`Unknown format "${values.format}". Expected one of: ${FORMATS.join(', ')}.`)
+    }
+
+    const isLibrary = format === 'library'
+    const jresPath = resolve(values.out || (isLibrary ? 'music.jres' : 'images.g.jres'))
 
     return {
+        format,
         inputDir: resolve(positionals[0]),
         jresPath,
         tsPath: values['no-ts'] ? null : resolve(values.ts || defaultTsPath(jresPath)),
         transposeOctaves: parseNumber(values.transpose, 'transpose') ?? -3,
         drumTransposeOctaves: parseNumber(values['drum-transpose'], 'drum-transpose') ?? -2,
         beatsPerMinute: parseNumber(values.bpm, 'bpm'),
-        namespace: values.namespace || SONG_NAMESPACE,
+        ticksPerBeat: parseTicksPerBeat(values['ticks-per-beat']),
+        namespace: values.namespace || (isLibrary ? LIBRARY_NAMESPACE : SONG_NAMESPACE),
         quiet: values.quiet,
     }
 }
@@ -128,6 +156,15 @@ const parseNumber = (value: string | undefined, flag: string) => {
     const parsed = Number(value)
     if (!Number.isFinite(parsed)) {
         throw new Error(`Expected a number for --${flag} but received "${value}".`)
+    }
+    return parsed
+}
+
+const parseTicksPerBeat = (value: string | undefined) => {
+    if (value === undefined) return DEFAULT_TICKS_PER_BEAT
+    const parsed = parseNumber(value, 'ticks-per-beat')!
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_TICKS_PER_BEAT) {
+        throw new Error(`Expected --ticks-per-beat to be an integer from 1 to ${MAX_TICKS_PER_BEAT}.`)
     }
     return parsed
 }
@@ -199,7 +236,13 @@ const assignInstruments = (tracks: MidiTrackSummary[]) => {
             drumTrackIds.add(track.id)
             continue
         }
-        instrumentAssignments[track.id] = guessInstrumentPreset(track.sourceTrackName, melodicIndex)
+        const filePreset = checkNameForPreset(track.sourceFileName.split("_").pop()!);
+        if (filePreset !== null) {
+            instrumentAssignments[track.id] = filePreset
+        }
+        else {
+            instrumentAssignments[track.id] = guessInstrumentPreset(track.sourceTrackName, melodicIndex)
+        }
         melodicIndex += 1
     }
 
@@ -223,12 +266,13 @@ const uniqueName = (name: string, taken: Set<string>) => {
     return candidate
 }
 
-const buildJRes = (songs: SongEntry[], namespace: string) => {
+/** Project jres files keep the song data as hex, matching what the MakeCode editor writes */
+const buildProjectJRes = (songs: SongEntry[], namespace: string) => {
     const entries: Record<string, unknown> = {}
 
     for (const song of songs) {
         entries[song.id] = {
-            data: Buffer.from(song.hex, 'hex').toString('base64'),
+            data: song.hex,
             mimeType: SONG_MIME_TYPE,
             displayName: song.displayName,
             namespace: `${namespace}.`,
@@ -239,6 +283,27 @@ const buildJRes = (songs: SongEntry[], namespace: string) => {
         mimeType: IMAGE_MIME_TYPE,
         dataEncoding: 'base64',
         namespace: IMAGES_NAMESPACE,
+    }
+
+    return JSON.stringify(entries, null, 4) + '\n'
+}
+
+/** Library jres files base64 encode the song bytes and share a single namespace */
+const buildLibraryJRes = (songs: SongEntry[], namespace: string) => {
+    const entries: Record<string, unknown> = {
+        '*': {
+            namespace,
+            mimeType: IMAGE_MIME_TYPE,
+            dataEncoding: 'base64',
+        },
+    }
+
+    for (const song of songs) {
+        entries[song.id] = {
+            data: Buffer.from(song.hex, 'hex').toString('base64'),
+            mimeType: SONG_MIME_TYPE,
+            ...(song.displayName === song.id ? {} : { displayName: song.displayName }),
+        }
     }
 
     return JSON.stringify(entries, null, 4) + '\n'
@@ -282,6 +347,23 @@ const buildProjectImagesTs = (songs: SongEntry[]) => {
     return `// ${warning}\nnamespace ${IMAGES_NAMESPACE} {\n${body}\n}\n// ${warning}\n`
 }
 
+/**
+ * Library songs are declared as fixedInstance constants with empty hex literals;
+ * the compiler fills in the data from the matching jres entry.
+ */
+const buildLibraryTs = (songs: SongEntry[], namespace: string) => {
+    const body = songs
+        .map(
+            (song) =>
+                `    //% fixedInstance jres blockIdentity=music._song\n` +
+                `    //% tags="song" whenUsed\n` +
+                `    export const ${song.id} = music.createSong(hex\`\`)\n`,
+        )
+        .join('\n')
+
+    return `namespace ${namespace} {\n${body}}\n`
+}
+
 const main = async () => {
     const options = parseOptions()
     const log = options.quiet ? () => {} : (message: string) => process.stdout.write(`${message}\n`)
@@ -316,6 +398,7 @@ const main = async () => {
                 drumTransposeOctaves: options.drumTransposeOctaves,
                 drumTrackIds,
                 beatsPerMinute: options.beatsPerMinute ?? song.beatsPerMinute ?? parsed.beatsPerMinute,
+                ticksPerBeat: options.ticksPerBeat,
             })
 
             songEntries.push({
@@ -339,13 +422,23 @@ const main = async () => {
         throw new Error('No songs were converted.')
     }
 
+    const isLibrary = options.format === 'library'
+
     await mkdir(dirname(options.jresPath), { recursive: true })
-    await writeFile(options.jresPath, buildJRes(songEntries, options.namespace))
-    log(`Wrote ${songEntries.length} song(s) to ${options.jresPath}`)
+    await writeFile(
+        options.jresPath,
+        isLibrary
+            ? buildLibraryJRes(songEntries, options.namespace)
+            : buildProjectJRes(songEntries, options.namespace),
+    )
+    log(`Wrote ${songEntries.length} song(s) to ${options.jresPath} (${options.format} format)`)
 
     if (options.tsPath) {
         await mkdir(dirname(options.tsPath), { recursive: true })
-        await writeFile(options.tsPath, buildProjectImagesTs(songEntries))
+        await writeFile(
+            options.tsPath,
+            isLibrary ? buildLibraryTs(songEntries, options.namespace) : buildProjectImagesTs(songEntries),
+        )
         log(`Wrote ${options.tsPath}`)
     }
 

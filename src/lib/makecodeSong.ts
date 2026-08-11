@@ -29,6 +29,7 @@ type BuildSongOptions = {
     drumTransposeOctaves?: number
     drumTrackIds?: ReadonlySet<number>
     beatsPerMinute?: number
+    ticksPerBeat?: number
 }
 
 export type ParsedMidiSummary = {
@@ -51,6 +52,9 @@ export const MAKECODE_INSTRUMENT_PRESETS: InstrumentPreset[] = getEmptySong(4).t
     label: track.name!,
     instrument: track.instrument!
 }))
+
+export const DEFAULT_TICKS_PER_BEAT = 8
+export const MAX_TICKS_PER_BEAT = 255
 
 const presetById = new Map(MAKECODE_INSTRUMENT_PRESETS.map((preset) => [preset.id, preset]))
 
@@ -172,34 +176,21 @@ export const extractNoteEvents = (midi: MidiType, trackIndex: number, isDrumTrac
         const startTick = event.ticks;
         const endTick = startTick + event.durationTicks;
 
-        const existing = makecodeEvents.find(e => e.startTick === startTick && Math.abs(e.endTick - endTick) <= 5);
-
         const spelling = isDrumTrack ? "normal" : (isBlackKey(event.midi) ? "sharp" : "normal");
 
         const velocity = event.velocity !== undefined ? Math.round(event.velocity * 127) : undefined;
 
-        if (existing) {
-            existing.notes.push({
-                note: isDrumTrack ? event.midi : event.midi + 1,
-                enharmonicSpelling: spelling
-            });
-            if (velocity !== undefined) {
-                existing.velocity = Math.max(existing.velocity ?? 0, velocity);
-            }
-        }
-        else {
-            makecodeEvents.push({
-                notes: [
-                    {
-                        note: isDrumTrack ? event.midi : event.midi + 1,
-                        enharmonicSpelling: spelling
-                    }
-                ],
-                startTick: startTick,
-                endTick: endTick,
-                velocity: velocity
-            });
-        }
+        makecodeEvents.push({
+            notes: [
+                {
+                    note: isDrumTrack ? event.midi : event.midi + 1,
+                    enharmonicSpelling: spelling
+                }
+            ],
+            startTick: startTick,
+            endTick: endTick,
+            velocity: velocity
+        });
     }
 
     logger.log(`Generated ${makecodeEvents.length} makecode events for track`);
@@ -246,15 +237,27 @@ const transposeNoteEvents = (events: NoteEvent[], octaves: number): NoteEvent[] 
 
 const scaleTiming = (events: NoteEvent[], sourcePPQ: number, targetPPQ: number): NoteEvent[] => {
     const scale = targetPPQ / sourcePPQ;
-    return events.map(event => {
-        const startTick = Math.floor(event.startTick * scale);
-        const endTick = Math.max(Math.floor(event.endTick * scale), startTick + 1);
+    const scaled = events.map(event => {
+        const startTick = Math.round(event.startTick * scale);
+        const endTick = Math.max(Math.round(event.endTick * scale), startTick + 1);
         return {
             ...event,
             startTick,
             endTick
         };
     });
+
+    const deduped: NoteEvent[] = [];
+    for (const event of scaled) {
+        const existing = deduped.find(e => e.startTick === event.startTick && e.endTick === event.endTick);
+        if (existing) {
+            existing.notes.push(...event.notes);
+        } else {
+            deduped.push(event);
+        }
+    }
+
+    return deduped;
 }
 
 export const buildMakeCodeSong = (
@@ -262,7 +265,10 @@ export const buildMakeCodeSong = (
     instrumentAssignments: Record<number, string>,
     options: BuildSongOptions = {},
 ): Song => {
-    const ticksPerBeat = 16
+    const ticksPerBeat = options.ticksPerBeat ?? DEFAULT_TICKS_PER_BEAT
+    if (!Number.isInteger(ticksPerBeat) || ticksPerBeat < 1 || ticksPerBeat > MAX_TICKS_PER_BEAT) {
+        throw new Error(`Ticks per beat must be an integer from 1 to ${MAX_TICKS_PER_BEAT}.`)
+    }
     const transposeOctaves = options.transposeOctaves || 0
     const drumTransposeOctaves = options.drumTransposeOctaves || 0
     const drumTrackIds = options.drumTrackIds ?? new Set<number>()
@@ -368,13 +374,21 @@ function isBlackKey(noteNumber: number) {
 }
 
 export const guessInstrumentPreset = (trackName: string, index: number) => {
+    const presetId = checkNameForPreset(trackName)
+    if (presetId !== null) {
+        return presetId
+    }
+    return MAKECODE_MELODIC_INSTRUMENT_PRESETS[index % MAKECODE_MELODIC_INSTRUMENT_PRESETS.length].id
+}
+
+export const checkNameForPreset = (trackName: string) => {
     const lowerName = trackName.toLowerCase()
     for (const preset of MAKECODE_MELODIC_INSTRUMENT_PRESETS) {
         if (lowerName.includes(preset.label.toLowerCase())) {
             return preset.id
         }
     }
-    return MAKECODE_MELODIC_INSTRUMENT_PRESETS[index % MAKECODE_MELODIC_INSTRUMENT_PRESETS.length].id
+    return null
 }
 
 // MIDI channel 10 (zero-indexed 9) is reserved for percussion by the General MIDI spec

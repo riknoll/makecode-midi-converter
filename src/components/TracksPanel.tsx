@@ -10,11 +10,13 @@ interface TracksPanelProps {
   transposeOctaves: number
   drumTransposeOctaves: number
   beatsPerMinute: number
+  ticksPerBeat: number
   onInstrumentChange: (trackId: number, presetId: string) => void
   onDrumToggle: (trackId: number, isDrum: boolean) => void
   onTransposeChange: (value: number) => void
   onDrumTransposeChange: (value: number) => void
   onBeatsPerMinuteChange: (value: number) => void
+  onTicksPerBeatChange: (value: number) => void
   onGenerate: () => void
 }
 
@@ -25,11 +27,13 @@ export function TracksPanel({
   transposeOctaves,
   drumTransposeOctaves,
   beatsPerMinute,
+  ticksPerBeat,
   onInstrumentChange,
   onDrumToggle,
   onTransposeChange,
   onDrumTransposeChange,
   onBeatsPerMinuteChange,
+  onTicksPerBeatChange,
   onGenerate,
 }: TracksPanelProps) {
   const totalNotes = useMemo(
@@ -51,9 +55,11 @@ export function TracksPanel({
         transposeOctaves={transposeOctaves}
         drumTransposeOctaves={drumTransposeOctaves}
         beatsPerMinute={beatsPerMinute}
+        ticksPerBeat={ticksPerBeat}
         onTransposeChange={onTransposeChange}
         onDrumTransposeChange={onDrumTransposeChange}
         onBeatsPerMinuteChange={onBeatsPerMinuteChange}
+        onTicksPerBeatChange={onTicksPerBeatChange}
       />
 
       <div className="track-grid">

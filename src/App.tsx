@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import './App.css'
 import {
   buildMakeCodeSongSnippet,
+  DEFAULT_TICKS_PER_BEAT,
   guessInstrumentPreset,
   isLikelyDrumTrack,
   parseMidiFiles,
@@ -20,6 +21,7 @@ function App() {
   const [transposeOctaves, setTransposeOctaves] = useState(0)
   const [drumTransposeOctaves, setDrumTransposeOctaves] = useState(0)
   const [beatsPerMinute, setBeatsPerMinute] = useState(120)
+  const [ticksPerBeat, setTicksPerBeat] = useState(DEFAULT_TICKS_PER_BEAT)
   const [output, setOutput] = useState('')
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -94,6 +96,7 @@ function App() {
         drumTransposeOctaves,
         drumTrackIds,
         beatsPerMinute,
+        ticksPerBeat,
       })
       setOutput(snippet)
       setCopyState('idle')
@@ -137,11 +140,13 @@ function App() {
           transposeOctaves={transposeOctaves}
           drumTransposeOctaves={drumTransposeOctaves}
           beatsPerMinute={beatsPerMinute}
+          ticksPerBeat={ticksPerBeat}
           onInstrumentChange={handleInstrumentChange}
           onDrumToggle={handleDrumToggle}
           onTransposeChange={setTransposeOctaves}
           onDrumTransposeChange={setDrumTransposeOctaves}
           onBeatsPerMinuteChange={setBeatsPerMinute}
+          onTicksPerBeatChange={setTicksPerBeat}
           onGenerate={generateSong}
         />
       )}

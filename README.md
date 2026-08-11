@@ -33,33 +33,57 @@ Tracks whose name mentions "drum" or "percussion", or that use MIDI channel 10
 (the General MIDI percussion channel), are routed to the MakeCode drum track.
 All other tracks are assigned a MakeCode instrument based on their name.
 
-### Output
+### Output formats
 
-Two files are written:
+Two files are always written: a `.jres` containing the song assets (one entry
+per song directory) and a companion `.ts`. Use `--format` to choose how they are
+generated.
 
-- `images.g.jres` — the song assets, one jres entry per song directory (the song
-  bytes are stored base64 encoded)
-- `images.g.ts` — the companion auto-generated code that registers the songs
+#### `--format project` (default)
 
-Copy both into a MakeCode Arcade project and add them to the `files` list in
-`pxt.json`. The songs will then show up in the asset explorer, and can be
-referenced by name in code:
+For dropping into a MakeCode Arcade project. The jres stores the song data as
+hex, and the companion TypeScript registers the songs with
+`helpers._registerFactory`, which is what the MakeCode editor itself emits.
+Defaults to writing `images.g.jres` and `images.g.ts`.
+
+Add both files to the `files` list in `pxt.json`. The songs will then show up in
+the asset explorer, and can be referenced by name in code:
 
 ```ts
 music.play(assets.song`overworld`, music.PlaybackMode.UntilDone)
 ```
 
+#### `--format library`
+
+For shipping songs in a MakeCode extension. The jres stores the song data as
+base64 under a single namespace, and the companion TypeScript declares each song
+as an exported `fixedInstance` constant with an empty `hex` literal that the
+compiler fills in from the jres. Defaults to writing `music.jres` and
+`music.ts`, using the `sprites.songs` namespace:
+
+```ts
+namespace sprites.songs {
+    //% fixedInstance jres blockIdentity=music._song
+    //% tags="song" whenUsed
+    export const overworld = music.createSong(hex``)
+}
+```
+
+Songs are then referenced directly as `sprites.songs.overworld`.
+
 ### Options
 
 | Option | Description |
 | --- | --- |
-| `-o, --out <path>` | Output `.jres` path (default: `./images.g.jres`) |
-| `--ts <path>` | Output `.g.ts` path (default: alongside the `.jres`) |
-| `--no-ts` | Skip emitting the companion `.g.ts` file |
+| `-f, --format <name>` | Output format: `project` or `library` (default: `project`) |
+| `-o, --out <path>` | Output `.jres` path (default: `./images.g.jres`, or `./music.jres` for `library`) |
+| `--ts <path>` | Output `.ts` path (default: alongside the `.jres`) |
+| `--no-ts` | Skip emitting the companion `.ts` file |
 | `--transpose <n>` | Octaves to transpose melodic tracks (default: `-3`) |
 | `--drum-transpose <n>` | Octaves to transpose drum tracks (default: `-2`) |
 | `--bpm <n>` | Force this tempo for every song, ignoring the directory names |
-| `--namespace <name>` | Namespace for the generated songs (default: `mySongs`) |
+| `--ticks-per-beat <n>` | Output timing resolution (default: `8`, range: `1`-`255`) |
+| `--namespace <name>` | Namespace for the generated songs (default: `mySongs`, or `sprites.songs` for `library`) |
 | `-q, --quiet` | Only print errors |
 | `-h, --help` | Show usage |
 
@@ -67,4 +91,5 @@ For example:
 
 ```sh
 npm run convert -- ./songs -o ./out/images.g.jres --transpose -2
+npm run convert -- ./songs --format library --namespace sprites.myTunes
 ```
