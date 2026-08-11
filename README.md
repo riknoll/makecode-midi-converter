@@ -83,6 +83,7 @@ Songs are then referenced directly as `sprites.songs.overworld`.
 | `--drum-transpose <n>` | Octaves to transpose drum tracks (default: `-2`) |
 | `--bpm <n>` | Force this tempo for every song, ignoring the directory names |
 | `--ticks-per-beat <n>` | Output timing resolution (default: `8`, range: `1`-`255`) |
+| `--double-resolution` | Double note timing, measures, and BPM without changing ticks per beat |
 | `--namespace <name>` | Namespace for the generated songs (default: `mySongs`, or `sprites.songs` for `library`) |
 | `-q, --quiet` | Only print errors |
 | `-h, --help` | Show usage |

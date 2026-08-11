@@ -5,10 +5,12 @@ interface TransposeControlsProps {
   drumTransposeOctaves: number
   beatsPerMinute: number
   ticksPerBeat: number
+  doubleResolution: boolean
   onTransposeChange: (value: number) => void
   onDrumTransposeChange: (value: number) => void
   onBeatsPerMinuteChange: (value: number) => void
   onTicksPerBeatChange: (value: number) => void
+  onDoubleResolutionChange: (value: boolean) => void
 }
 
 function clampOctaves(value: number): number {
@@ -30,10 +32,12 @@ export function TransposeControls({
   drumTransposeOctaves,
   beatsPerMinute,
   ticksPerBeat,
+  doubleResolution,
   onTransposeChange,
   onDrumTransposeChange,
   onBeatsPerMinuteChange,
   onTicksPerBeatChange,
+  onDoubleResolutionChange,
 }: TransposeControlsProps) {
   return (
     <div className="transpose-row">
@@ -84,6 +88,15 @@ export function TransposeControls({
           onChange={(event) => onTicksPerBeatChange(clampTicksPerBeat(Number(event.target.value)))}
         />
         <span className="unit-label">ticks/beat</span>
+      </label>
+      <label>
+        <input
+          type="checkbox"
+          checked={doubleResolution}
+          onChange={(event) => onDoubleResolutionChange(event.target.checked)}
+        />
+        Double Resolution
+        <span className="unit-label">2× measures and BPM</span>
       </label>
     </div>
   )

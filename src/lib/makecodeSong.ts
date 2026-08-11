@@ -30,6 +30,7 @@ type BuildSongOptions = {
     drumTrackIds?: ReadonlySet<number>
     beatsPerMinute?: number
     ticksPerBeat?: number
+    doubleResolution?: boolean
 }
 
 export type ParsedMidiSummary = {
@@ -269,10 +270,12 @@ export const buildMakeCodeSong = (
     if (!Number.isInteger(ticksPerBeat) || ticksPerBeat < 1 || ticksPerBeat > MAX_TICKS_PER_BEAT) {
         throw new Error(`Ticks per beat must be an integer from 1 to ${MAX_TICKS_PER_BEAT}.`)
     }
+    const resolutionMultiplier = options.doubleResolution ? 2 : 1
     const transposeOctaves = options.transposeOctaves || 0
     const drumTransposeOctaves = options.drumTransposeOctaves || 0
     const drumTrackIds = options.drumTrackIds ?? new Set<number>()
-    const beatsPerMinute = Math.max(1, Math.round(options.beatsPerMinute ?? parsed.beatsPerMinute))
+    const beatsPerMinute =
+        Math.max(1, Math.round(options.beatsPerMinute ?? parsed.beatsPerMinute)) * resolutionMultiplier
 
     const defaultDrums = getEmptySong(1).tracks.find(t => t.drums)?.drums ?? []
     const numDrums = defaultDrums.length || 16
@@ -293,7 +296,7 @@ export const buildMakeCodeSong = (
         }
 
         const transposed = transposeNoteEvents(track.notes, transposeOctaves)
-        const scaled = scaleTiming(transposed, track.sourcePpq, ticksPerBeat)
+        const scaled = scaleTiming(transposed, track.sourcePpq, ticksPerBeat * resolutionMultiplier)
 
         return {
             id: preset.makecodeTrackId,
@@ -306,7 +309,7 @@ export const buildMakeCodeSong = (
         const allDrumNotes: NoteEvent[] = []
         for (const drumTrack of drumSourceTracks) {
             const remapped = remapDrumNotes(drumTrack.notes, drumTransposeOctaves, numDrums)
-            const scaled = scaleTiming(remapped, drumTrack.sourcePpq, ticksPerBeat)
+            const scaled = scaleTiming(remapped, drumTrack.sourcePpq, ticksPerBeat * resolutionMultiplier)
             allDrumNotes.push(...scaled)
         }
         allDrumNotes.sort((a, b) => a.startTick - b.startTick)
@@ -325,7 +328,10 @@ export const buildMakeCodeSong = (
     )
 
     const ticksPerMeasure = ticksPerBeat * parsed.beatsPerMeasure
-    const measures = Math.max(1, Math.ceil(maxTick / ticksPerMeasure))
+    const measures = Math.max(
+        resolutionMultiplier,
+        Math.ceil(maxTick / (ticksPerMeasure * resolutionMultiplier)) * resolutionMultiplier,
+    )
 
     const song: Song = {
         beatsPerMinute,
@@ -364,8 +370,10 @@ export const buildMakeCodeSongSnippet = (
         drumTransposeOctaves === 0 ? '' : `\n// Drum tracks transposed ${drumTransposeOctaves > 0 ? '+' : ''}${drumTransposeOctaves} octave(s)`
     const bpmLabel =
         beatsPerMinute === parsed.beatsPerMinute ? '' : `\n// Tempo set to ${beatsPerMinute} BPM`
+    const resolutionLabel =
+        options.doubleResolution ? '\n// Resolution doubled by scaling measures and tempo' : ''
 
-    return `// Generated from ${fileLabel}${melodicTransposeLabel}${drumTransposeLabel}${bpmLabel}\nconst song = music.createSong(hex\`${songHex}\`)\nmusic.play(song, music.PlaybackMode.UntilDone)`
+    return `// Generated from ${fileLabel}${melodicTransposeLabel}${drumTransposeLabel}${bpmLabel}${resolutionLabel}\nconst song = music.createSong(hex\`${songHex}\`)\nmusic.play(song, music.PlaybackMode.UntilDone)`
 }
 
 function isBlackKey(noteNumber: number) {

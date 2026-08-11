@@ -22,6 +22,7 @@ function App() {
   const [drumTransposeOctaves, setDrumTransposeOctaves] = useState(0)
   const [beatsPerMinute, setBeatsPerMinute] = useState(120)
   const [ticksPerBeat, setTicksPerBeat] = useState(DEFAULT_TICKS_PER_BEAT)
+  const [doubleResolution, setDoubleResolution] = useState(false)
   const [output, setOutput] = useState('')
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -97,6 +98,7 @@ function App() {
         drumTrackIds,
         beatsPerMinute,
         ticksPerBeat,
+        doubleResolution,
       })
       setOutput(snippet)
       setCopyState('idle')
@@ -141,12 +143,14 @@ function App() {
           drumTransposeOctaves={drumTransposeOctaves}
           beatsPerMinute={beatsPerMinute}
           ticksPerBeat={ticksPerBeat}
+          doubleResolution={doubleResolution}
           onInstrumentChange={handleInstrumentChange}
           onDrumToggle={handleDrumToggle}
           onTransposeChange={setTransposeOctaves}
           onDrumTransposeChange={setDrumTransposeOctaves}
           onBeatsPerMinuteChange={setBeatsPerMinute}
           onTicksPerBeatChange={setTicksPerBeat}
+          onDoubleResolutionChange={setDoubleResolution}
           onGenerate={generateSong}
         />
       )}

@@ -65,6 +65,7 @@ Options:
       --drum-transpose <n>  Octaves to transpose drum tracks (default: -2)
       --bpm <n>             Force this tempo for every song
       --ticks-per-beat <n>  Output timing resolution (default: ${DEFAULT_TICKS_PER_BEAT})
+      --double-resolution   Double note timing, measures, and BPM
       --namespace <name>    Namespace for the generated songs
                             (default: ${SONG_NAMESPACE} for project, sprites.songs for library)
   -q, --quiet               Only print errors
@@ -109,6 +110,7 @@ const parseOptions = () => {
             'drum-transpose': { type: 'string' },
             bpm: { type: 'string' },
             'ticks-per-beat': { type: 'string' },
+            'double-resolution': { type: 'boolean', default: false },
             namespace: { type: 'string' },
             quiet: { type: 'boolean', short: 'q', default: false },
             help: { type: 'boolean', short: 'h', default: false },
@@ -141,6 +143,7 @@ const parseOptions = () => {
         drumTransposeOctaves: parseNumber(values['drum-transpose'], 'drum-transpose') ?? -2,
         beatsPerMinute: parseNumber(values.bpm, 'bpm'),
         ticksPerBeat: parseTicksPerBeat(values['ticks-per-beat']),
+        doubleResolution: values['double-resolution'],
         namespace: values.namespace || (isLibrary ? LIBRARY_NAMESPACE : SONG_NAMESPACE),
         quiet: values.quiet,
     }
@@ -399,6 +402,7 @@ const main = async () => {
                 drumTrackIds,
                 beatsPerMinute: options.beatsPerMinute ?? song.beatsPerMinute ?? parsed.beatsPerMinute,
                 ticksPerBeat: options.ticksPerBeat,
+                doubleResolution: options.doubleResolution,
             })
 
             songEntries.push({
