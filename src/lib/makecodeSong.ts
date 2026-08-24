@@ -31,6 +31,8 @@ type BuildSongOptions = {
     beatsPerMinute?: number
     ticksPerBeat?: number
     doubleResolution?: boolean
+    quantizeNoteEvents?: boolean
+    truncateMeasures?: number
 }
 
 export type ParsedMidiSummary = {
@@ -56,6 +58,7 @@ export const MAKECODE_INSTRUMENT_PRESETS: InstrumentPreset[] = getEmptySong(4).t
 
 export const DEFAULT_TICKS_PER_BEAT = 8
 export const MAX_TICKS_PER_BEAT = 255
+export const MAX_SONG_MEASURES = 255
 
 const presetById = new Map(MAKECODE_INSTRUMENT_PRESETS.map((preset) => [preset.id, preset]))
 
@@ -261,6 +264,42 @@ const scaleTiming = (events: NoteEvent[], sourcePPQ: number, targetPPQ: number):
     return deduped;
 }
 
+const quantizeNoteEvents = (events: NoteEvent[]): NoteEvent[] => {
+    const eventsByStartTick = new Map<number, NoteEvent[]>()
+    for (const event of events) {
+        const group = eventsByStartTick.get(event.startTick)
+        if (group) group.push(event)
+        else eventsByStartTick.set(event.startTick, [event])
+    }
+
+    const combined = [...eventsByStartTick.entries()]
+        .sort(([left], [right]) => left - right)
+        .map(([startTick, group]) => {
+            const noteCount = group.reduce((total, event) => total + event.notes.length, 0)
+            const totalDuration = group.reduce(
+                (total, event) => total + (event.endTick - event.startTick) * event.notes.length,
+                0,
+            )
+            const velocities = group
+                .map((event) => event.velocity)
+                .filter((velocity): velocity is number => velocity !== undefined)
+
+            return {
+                notes: group.flatMap((event) => event.notes),
+                startTick,
+                endTick: startTick + Math.max(1, Math.round(totalDuration / noteCount)),
+                ...(velocities.length ? { velocity: Math.max(...velocities) } : {}),
+            }
+        })
+
+    return combined.map((event, index) => {
+        const nextStartTick = combined[index + 1]?.startTick
+        return nextStartTick !== undefined && event.endTick > nextStartTick
+            ? { ...event, endTick: nextStartTick }
+            : event
+    })
+}
+
 export const buildMakeCodeSong = (
     parsed: ParsedMidiSummary,
     instrumentAssignments: Record<number, string>,
@@ -269,6 +308,14 @@ export const buildMakeCodeSong = (
     const ticksPerBeat = options.ticksPerBeat ?? DEFAULT_TICKS_PER_BEAT
     if (!Number.isInteger(ticksPerBeat) || ticksPerBeat < 1 || ticksPerBeat > MAX_TICKS_PER_BEAT) {
         throw new Error(`Ticks per beat must be an integer from 1 to ${MAX_TICKS_PER_BEAT}.`)
+    }
+    if (
+        options.truncateMeasures !== undefined &&
+        (!Number.isInteger(options.truncateMeasures) ||
+            options.truncateMeasures < 1 ||
+            options.truncateMeasures > MAX_SONG_MEASURES)
+    ) {
+        throw new Error(`Truncate measures must be an integer from 1 to ${MAX_SONG_MEASURES}.`)
     }
     const resolutionMultiplier = options.doubleResolution ? 2 : 1
     const transposeOctaves = options.transposeOctaves || 0
@@ -301,7 +348,7 @@ export const buildMakeCodeSong = (
         return {
             id: preset.makecodeTrackId,
             instrument,
-            notes: scaled,
+            notes: options.quantizeNoteEvents ? quantizeNoteEvents(scaled) : scaled,
         }
     })
 
@@ -313,32 +360,51 @@ export const buildMakeCodeSong = (
             allDrumNotes.push(...scaled)
         }
         allDrumNotes.sort((a, b) => a.startTick - b.startTick)
+        const drumNotes = options.quantizeNoteEvents ? quantizeNoteEvents(allDrumNotes) : allDrumNotes
 
         tracks.push({
             id: 9, // MakeCode drums track id
             instrument: { waveform: 0, ampEnvelope: { attack: 0, decay: 0, sustain: 0, release: 0, amplitude: 0 } },
             drums: defaultDrums,
-            notes: allDrumNotes,
+            notes: drumNotes,
         })
     }
 
-    const maxTick = tracks.reduce(
+    const ticksPerMeasure = ticksPerBeat * parsed.beatsPerMeasure
+    const truncateTick =
+        options.truncateMeasures === undefined ? undefined : options.truncateMeasures * ticksPerMeasure
+    const outputTracks =
+        truncateTick === undefined
+            ? tracks
+            : tracks.map((track) => ({
+                  ...track,
+                  notes: track.notes
+                      .filter((note) => note.startTick < truncateTick)
+                      .map((note) =>
+                          note.endTick > truncateTick ? { ...note, endTick: truncateTick } : note,
+                      ),
+              }))
+
+    const maxTick = outputTracks.reduce(
         (songMax, track) => Math.max(songMax, ...track.notes.map((note) => note.endTick), 0),
         0,
     )
 
-    const ticksPerMeasure = ticksPerBeat * parsed.beatsPerMeasure
-    const measures = Math.max(
+    const naturalMeasures = Math.max(
         resolutionMultiplier,
         Math.ceil(maxTick / (ticksPerMeasure * resolutionMultiplier)) * resolutionMultiplier,
     )
+    const measures =
+        options.truncateMeasures === undefined
+            ? naturalMeasures
+            : Math.min(naturalMeasures, options.truncateMeasures)
 
     const song: Song = {
         beatsPerMinute,
         beatsPerMeasure: parsed.beatsPerMeasure,
         ticksPerBeat,
         measures,
-        tracks,
+        tracks: outputTracks,
     }
 
     return song
@@ -372,8 +438,14 @@ export const buildMakeCodeSongSnippet = (
         beatsPerMinute === parsed.beatsPerMinute ? '' : `\n// Tempo set to ${beatsPerMinute} BPM`
     const resolutionLabel =
         options.doubleResolution ? '\n// Resolution doubled by scaling measures and tempo' : ''
+    const quantizationLabel =
+        options.quantizeNoteEvents ? '\n// Note events quantized to remove overlaps' : ''
+    const truncationLabel =
+        options.truncateMeasures === undefined
+            ? ''
+            : `\n// Song truncated to ${options.truncateMeasures} measure(s)`
 
-    return `// Generated from ${fileLabel}${melodicTransposeLabel}${drumTransposeLabel}${bpmLabel}${resolutionLabel}\nconst song = music.createSong(hex\`${songHex}\`)\nmusic.play(song, music.PlaybackMode.UntilDone)`
+    return `// Generated from ${fileLabel}${melodicTransposeLabel}${drumTransposeLabel}${bpmLabel}${resolutionLabel}${quantizationLabel}${truncationLabel}\nconst song = music.createSong(hex\`${songHex}\`)\nmusic.play(song, music.PlaybackMode.UntilDone)`
 }
 
 function isBlackKey(noteNumber: number) {

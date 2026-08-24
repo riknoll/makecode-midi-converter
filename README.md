@@ -84,6 +84,8 @@ Songs are then referenced directly as `sprites.songs.overworld`.
 | `--bpm <n>` | Force this tempo for every song, ignoring the directory names |
 | `--ticks-per-beat <n>` | Output timing resolution (default: `8`, range: `1`-`255`) |
 | `--double-resolution` | Double note timing, measures, and BPM without changing ticks per beat |
+| `--quantize` | Merge notes starting on the same tick using their average duration, then truncate overlaps |
+| `--truncate <n>` | Truncate each output song after the specified number of measures |
 | `--namespace <name>` | Namespace for the generated songs (default: `mySongs`, or `sprites.songs` for `library`) |
 | `-q, --quiet` | Only print errors |
 | `-h, --help` | Show usage |

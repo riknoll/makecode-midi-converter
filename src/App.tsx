@@ -23,6 +23,8 @@ function App() {
   const [beatsPerMinute, setBeatsPerMinute] = useState(120)
   const [ticksPerBeat, setTicksPerBeat] = useState(DEFAULT_TICKS_PER_BEAT)
   const [doubleResolution, setDoubleResolution] = useState(false)
+  const [quantizeNoteEvents, setQuantizeNoteEvents] = useState(false)
+  const [truncateMeasures, setTruncateMeasures] = useState<number | undefined>()
   const [output, setOutput] = useState('')
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -99,6 +101,8 @@ function App() {
         beatsPerMinute,
         ticksPerBeat,
         doubleResolution,
+        quantizeNoteEvents,
+        truncateMeasures,
       })
       setOutput(snippet)
       setCopyState('idle')
@@ -144,6 +148,8 @@ function App() {
           beatsPerMinute={beatsPerMinute}
           ticksPerBeat={ticksPerBeat}
           doubleResolution={doubleResolution}
+          quantizeNoteEvents={quantizeNoteEvents}
+          truncateMeasures={truncateMeasures}
           onInstrumentChange={handleInstrumentChange}
           onDrumToggle={handleDrumToggle}
           onTransposeChange={setTransposeOctaves}
@@ -151,6 +157,8 @@ function App() {
           onBeatsPerMinuteChange={setBeatsPerMinute}
           onTicksPerBeatChange={setTicksPerBeat}
           onDoubleResolutionChange={setDoubleResolution}
+          onQuantizeNoteEventsChange={setQuantizeNoteEvents}
+          onTruncateMeasuresChange={setTruncateMeasures}
           onGenerate={generateSong}
         />
       )}

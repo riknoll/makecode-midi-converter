@@ -8,6 +8,7 @@ import {
     DEFAULT_TICKS_PER_BEAT,
     guessInstrumentPreset,
     isLikelyDrumTrack,
+    MAX_SONG_MEASURES,
     MAX_TICKS_PER_BEAT,
     mergeParsedMidi,
     parseMidiData,
@@ -66,13 +67,15 @@ Options:
       --bpm <n>             Force this tempo for every song
       --ticks-per-beat <n>  Output timing resolution (default: ${DEFAULT_TICKS_PER_BEAT})
       --double-resolution   Double note timing, measures, and BPM
+      --quantize            Merge simultaneous notes and truncate overlaps
+      --truncate <n>        Truncate output after this many measures
       --namespace <name>    Namespace for the generated songs
                             (default: ${SONG_NAMESPACE} for project, sprites.songs for library)
   -q, --quiet               Only print errors
   -h, --help                Show this message
 `
 
-const NUMERIC_FLAGS = ['transpose', 'drum-transpose', 'bpm', 'ticks-per-beat']
+const NUMERIC_FLAGS = ['transpose', 'drum-transpose', 'bpm', 'ticks-per-beat', 'truncate']
 
 /**
  * parseArgs refuses to treat a leading-dash token as an option argument, so
@@ -111,6 +114,8 @@ const parseOptions = () => {
             bpm: { type: 'string' },
             'ticks-per-beat': { type: 'string' },
             'double-resolution': { type: 'boolean', default: false },
+            quantize: { type: 'boolean', default: false },
+            truncate: { type: 'string' },
             namespace: { type: 'string' },
             quiet: { type: 'boolean', short: 'q', default: false },
             help: { type: 'boolean', short: 'h', default: false },
@@ -144,6 +149,8 @@ const parseOptions = () => {
         beatsPerMinute: parseNumber(values.bpm, 'bpm'),
         ticksPerBeat: parseTicksPerBeat(values['ticks-per-beat']),
         doubleResolution: values['double-resolution'],
+        quantizeNoteEvents: values.quantize,
+        truncateMeasures: parseTruncateMeasures(values.truncate),
         namespace: values.namespace || (isLibrary ? LIBRARY_NAMESPACE : SONG_NAMESPACE),
         quiet: values.quiet,
     }
@@ -168,6 +175,15 @@ const parseTicksPerBeat = (value: string | undefined) => {
     const parsed = parseNumber(value, 'ticks-per-beat')!
     if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_TICKS_PER_BEAT) {
         throw new Error(`Expected --ticks-per-beat to be an integer from 1 to ${MAX_TICKS_PER_BEAT}.`)
+    }
+    return parsed
+}
+
+const parseTruncateMeasures = (value: string | undefined) => {
+    if (value === undefined) return undefined
+    const parsed = parseNumber(value, 'truncate')!
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_SONG_MEASURES) {
+        throw new Error(`Expected --truncate to be an integer from 1 to ${MAX_SONG_MEASURES}.`)
     }
     return parsed
 }
@@ -403,6 +419,8 @@ const main = async () => {
                 beatsPerMinute: options.beatsPerMinute ?? song.beatsPerMinute ?? parsed.beatsPerMinute,
                 ticksPerBeat: options.ticksPerBeat,
                 doubleResolution: options.doubleResolution,
+                quantizeNoteEvents: options.quantizeNoteEvents,
+                truncateMeasures: options.truncateMeasures,
             })
 
             songEntries.push({
