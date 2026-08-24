@@ -2,7 +2,9 @@ import { useMemo, useState } from 'react'
 import './App.css'
 import {
   buildMakeCodeSongSnippet,
+  DEFAULT_TICKS_PER_BEAT,
   guessInstrumentPreset,
+  isLikelyDrumTrack,
   parseMidiFiles,
   type ParsedMidiSummary,
 } from './lib/makecodeSong'
@@ -19,6 +21,10 @@ function App() {
   const [transposeOctaves, setTransposeOctaves] = useState(0)
   const [drumTransposeOctaves, setDrumTransposeOctaves] = useState(0)
   const [beatsPerMinute, setBeatsPerMinute] = useState(120)
+  const [ticksPerBeat, setTicksPerBeat] = useState(DEFAULT_TICKS_PER_BEAT)
+  const [doubleResolution, setDoubleResolution] = useState(false)
+  const [quantizeNoteEvents, setQuantizeNoteEvents] = useState(false)
+  const [truncateMeasures, setTruncateMeasures] = useState<number | undefined>()
   const [output, setOutput] = useState('')
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -49,7 +55,7 @@ function App() {
       const defaults: Record<number, string> = {}
       parsed.tracks.forEach((track, index) => {
         defaults[track.id] = guessInstrumentPreset(track.name, index)
-        if (track.name.toLowerCase().includes('drum') || track.name.toLowerCase().includes('percussion')) {
+        if (isLikelyDrumTrack(track)) {
           initialDrumIds.add(track.id)
         }
       })
@@ -93,6 +99,10 @@ function App() {
         drumTransposeOctaves,
         drumTrackIds,
         beatsPerMinute,
+        ticksPerBeat,
+        doubleResolution,
+        quantizeNoteEvents,
+        truncateMeasures,
       })
       setOutput(snippet)
       setCopyState('idle')
@@ -136,11 +146,19 @@ function App() {
           transposeOctaves={transposeOctaves}
           drumTransposeOctaves={drumTransposeOctaves}
           beatsPerMinute={beatsPerMinute}
+          ticksPerBeat={ticksPerBeat}
+          doubleResolution={doubleResolution}
+          quantizeNoteEvents={quantizeNoteEvents}
+          truncateMeasures={truncateMeasures}
           onInstrumentChange={handleInstrumentChange}
           onDrumToggle={handleDrumToggle}
           onTransposeChange={setTransposeOctaves}
           onDrumTransposeChange={setDrumTransposeOctaves}
           onBeatsPerMinuteChange={setBeatsPerMinute}
+          onTicksPerBeatChange={setTicksPerBeat}
+          onDoubleResolutionChange={setDoubleResolution}
+          onQuantizeNoteEventsChange={setQuantizeNoteEvents}
+          onTruncateMeasuresChange={setTruncateMeasures}
           onGenerate={generateSong}
         />
       )}

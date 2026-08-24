@@ -10,11 +10,19 @@ interface TracksPanelProps {
   transposeOctaves: number
   drumTransposeOctaves: number
   beatsPerMinute: number
+  ticksPerBeat: number
+  doubleResolution: boolean
+  quantizeNoteEvents: boolean
+  truncateMeasures: number | undefined
   onInstrumentChange: (trackId: number, presetId: string) => void
   onDrumToggle: (trackId: number, isDrum: boolean) => void
   onTransposeChange: (value: number) => void
   onDrumTransposeChange: (value: number) => void
   onBeatsPerMinuteChange: (value: number) => void
+  onTicksPerBeatChange: (value: number) => void
+  onDoubleResolutionChange: (value: boolean) => void
+  onQuantizeNoteEventsChange: (value: boolean) => void
+  onTruncateMeasuresChange: (value: number | undefined) => void
   onGenerate: () => void
 }
 
@@ -25,11 +33,19 @@ export function TracksPanel({
   transposeOctaves,
   drumTransposeOctaves,
   beatsPerMinute,
+  ticksPerBeat,
+  doubleResolution,
+  quantizeNoteEvents,
+  truncateMeasures,
   onInstrumentChange,
   onDrumToggle,
   onTransposeChange,
   onDrumTransposeChange,
   onBeatsPerMinuteChange,
+  onTicksPerBeatChange,
+  onDoubleResolutionChange,
+  onQuantizeNoteEventsChange,
+  onTruncateMeasuresChange,
   onGenerate,
 }: TracksPanelProps) {
   const totalNotes = useMemo(
@@ -51,9 +67,17 @@ export function TracksPanel({
         transposeOctaves={transposeOctaves}
         drumTransposeOctaves={drumTransposeOctaves}
         beatsPerMinute={beatsPerMinute}
+        ticksPerBeat={ticksPerBeat}
+        doubleResolution={doubleResolution}
+        quantizeNoteEvents={quantizeNoteEvents}
+        truncateMeasures={truncateMeasures}
         onTransposeChange={onTransposeChange}
         onDrumTransposeChange={onDrumTransposeChange}
         onBeatsPerMinuteChange={onBeatsPerMinuteChange}
+        onTicksPerBeatChange={onTicksPerBeatChange}
+        onDoubleResolutionChange={onDoubleResolutionChange}
+        onQuantizeNoteEventsChange={onQuantizeNoteEventsChange}
+        onTruncateMeasuresChange={onTruncateMeasuresChange}
       />
 
       <div className="track-grid">
